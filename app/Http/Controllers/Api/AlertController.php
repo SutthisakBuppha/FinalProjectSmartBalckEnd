@@ -21,7 +21,7 @@ class AlertController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'alert_id'     => 'sometimes|required|string|max:11|unique:alerts,alert_id',
+            'alert_id'     => 'sometimes|required|string|max:8|unique:alerts,alert_id',
             'trip_id'      => 'required|string|exists:trips,trip_id',
             'driver_id'    => 'required|string|exists:drivers,driver_id',
             'device_id'    => 'nullable|string|exists:devices,device_id',
@@ -39,7 +39,7 @@ class AlertController extends Controller
 
         // ถ้าไม่มี alert_id ให้สร้างเป็น string random
         if (!isset($data['alert_id'])) {
-            $data['alert_id'] = (string) \Illuminate\Support\Str::random(11);
+            $data['alert_id'] = (string) \Illuminate\Support\Str::random(8);
         }
 
         $alert = Alert::create($data);

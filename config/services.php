@@ -31,7 +31,7 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
     'iot' => [
-        'api_key' => env('IOT_API_KEY'),
+        'api_key' => env('IOT_API_KEY','smart-iot-2026-secretkey'),
     ],
 
 ];

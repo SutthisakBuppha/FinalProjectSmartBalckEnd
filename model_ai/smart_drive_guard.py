@@ -10,18 +10,19 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
 # ==================== ตั้งค่าระบบ (CONFIG) ====================
-DEVICE_IP = "10.170.65.51"
+# DEVICE_IP = "10.170.65.51"
+DEVICE_IP = "10.179.216.51"
 
 STREAM_URL = f"http://{DEVICE_IP}:81/stream"        # พอร์ตกล้อง (สตรีมวิดีโอ)
 BUZZER_ON_URL = f"http://{DEVICE_IP}:82/buzzer/on"    # สั่งให้บัซเซอร์เริ่มดัง
 BUZZER_OFF_URL = f"http://{DEVICE_IP}:82/buzzer/off"  # สั่งให้บัซเซอร์หยุดดัง
 
-LARAVEL_WEBHOOK_URL = "http://10.170.65.154:8000/api/alerts"  # 🔴 แก้จาก localhost เป็น IP ของเครื่องที่รัน php artisan serve --host=0.0.0.0
+LARAVEL_WEBHOOK_URL = "http://10.179.216.154:8000/api/alerts"  # 🔴 แก้จาก localhost เป็น IP ของเครื่องที่รัน php artisan serve --host=0.0.0.0
 IOT_API_KEY = "smart-iot-2026-secretkey"
 
-TRIP_ID = 110
-DRIVER_ID = 50
-DEVICE_ID = 19
+TRIP_ID = "110"
+DRIVER_ID = "50"
+DEVICE_ID = "19"
 
 # ---- MediaPipe Face Landmarker ----
 MODEL_PATH = "face_landmarker.task"  # ดาวน์โหลดจากลิงก์ในคำอธิบาย แล้ววางไว้โฟลเดอร์เดียวกัน
@@ -161,12 +162,13 @@ def send_alert_to_laravel(alert_type: str):
         "driver_id": DRIVER_ID,
         "device_id": DEVICE_ID,
         "type": alert_type,
-        "snapshot_url": "http://10.170.65.154:8000/storage/snapshots/default.jpg",
+        "snapshot_url": "http://10.179.216.154:8000/storage/snapshots/default.jpg",
         "latitude": 13.7563,
         "longitude": 100.5018
     }
     headers = {
         "Content-Type": "application/json",
+         "Accept": "application/json",
         "X-API-KEY": IOT_API_KEY
     }
 
