@@ -10,29 +10,19 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
 # ==================== ตั้งค่าระบบ (CONFIG) ====================
-# 🔴 จุดเดียวที่ยัง fix ไว้ -- ใช้ mDNS name แทน IP เพื่อไม่ต้องแก้ตาม WiFi ที่เปลี่ยน
-# ถ้าเครื่องที่รัน Laravel ยังไม่ได้ตั้ง mDNS ไว้ ให้ใช้ IP จริงแทนชั่วคราว
-# LARAVEL_BASE_URL = "http://laravel-pc.local:8000"
-LARAVEL_BASE_URL = "http://DESKTOP-8H547TA.local:8000"
+# DEVICE_IP = "10.170.65.51"
+DEVICE_IP = "10.179.216.51"
 
-LARAVEL_WEBHOOK_URL = f"{LARAVEL_BASE_URL}/api/alerts"
-DEVICE_IP_ENDPOINT = f"{LARAVEL_BASE_URL}/api/devices/19/ip"
+STREAM_URL = f"http://{DEVICE_IP}:81/stream"        # พอร์ตกล้อง (สตรีมวิดีโอ)
+BUZZER_ON_URL = f"http://{DEVICE_IP}:82/buzzer/on"    # สั่งให้บัซเซอร์เริ่มดัง
+BUZZER_OFF_URL = f"http://{DEVICE_IP}:82/buzzer/off"  # สั่งให้บัซเซอร์หยุดดัง
 
+LARAVEL_WEBHOOK_URL = "http://10.179.216.154:8000/api/alerts"  # 🔴 แก้จาก localhost เป็น IP ของเครื่องที่รัน php artisan serve --host=0.0.0.0
 IOT_API_KEY = "smart-iot-2026-secretkey"
 
 TRIP_ID = "110"
 DRIVER_ID = "50"
 DEVICE_ID = "19"
-
-# ---- ตัวแปร IP ของ ESP32 (ESP32 ไปลงทะเบียนไว้กับ Laravel เอง ตอนบูต) ----
-DEVICE_IP = None
-STREAM_URL = None
-BUZZER_ON_URL = None
-BUZZER_OFF_URL = None
-
-DEVICE_IP_REFRESH_SECONDS = 30          # เช็ค IP ใหม่จาก Laravel ทุกๆ กี่วิ (เผื่อ ESP32 เปลี่ยน WiFi)
-DEVICE_IP_FETCH_RETRY_DELAY = 3
-DEVICE_IP_FETCH_MAX_RETRIES = 10        # ตอนเริ่มโปรแกรม ลองกี่ครั้งก่อนยอมแพ้
 
 # ---- MediaPipe Face Landmarker ----
 MODEL_PATH = "face_landmarker.task"  # ดาวน์โหลดจากลิงก์ในคำอธิบาย แล้ววางไว้โฟลเดอร์เดียวกัน
@@ -114,53 +104,6 @@ def analyze_frame(frame_bgr):
     return True, eyes_closed, head_turned, yaw_deg
 
 
-def fetch_device_ip():
-    """ดึง IP ล่าสุดของ ESP32 จาก Laravel (ESP32 ไป self-register ไว้ตอนบูต)"""
-    try:
-        res = requests.get(DEVICE_IP_ENDPOINT, timeout=LARAVEL_TIMEOUT_SECONDS)
-        res.raise_for_status()
-        data = res.json()
-        ip = data.get("ip_address")
-        if not ip:
-            print("⚠️ Laravel ตอบกลับมา แต่ยังไม่มี IP ของ ESP32 (ยังไม่เคย register)")
-            return None
-        return ip
-    except Exception as e:
-        print(f"❌ ดึง IP อุปกรณ์จาก Laravel ไม่สำเร็จ: {e}")
-        return None
-
-
-def refresh_device_urls(new_ip):
-    """อัปเดตตัวแปร URL ทั้งหมดเมื่อ IP เปลี่ยน"""
-    global DEVICE_IP, STREAM_URL, BUZZER_ON_URL, BUZZER_OFF_URL
-    DEVICE_IP = new_ip
-    STREAM_URL = f"http://{DEVICE_IP}:81/stream"
-    BUZZER_ON_URL = f"http://{DEVICE_IP}:82/buzzer/on"
-    BUZZER_OFF_URL = f"http://{DEVICE_IP}:82/buzzer/off"
-    print(f"🌐 ใช้ IP อุปกรณ์: {DEVICE_IP}")
-    print(f"   STREAM_URL     = {STREAM_URL}")
-    print(f"   BUZZER_ON_URL  = {BUZZER_ON_URL}")
-    print(f"   BUZZER_OFF_URL = {BUZZER_OFF_URL}")
-
-
-# ==================== ดึง IP ของ ESP32 ตอนเริ่มโปรแกรม (รอจนกว่าจะได้) ====================
-print(f"🔄 กำลังขอ IP ของอุปกรณ์จาก Laravel: {DEVICE_IP_ENDPOINT}")
-_ip = None
-for attempt in range(1, DEVICE_IP_FETCH_MAX_RETRIES + 1):
-    _ip = fetch_device_ip()
-    if _ip:
-        break
-    print(f"⏳ ยังไม่ได้ IP ลองใหม่ครั้งที่ {attempt}/{DEVICE_IP_FETCH_MAX_RETRIES}...")
-    time.sleep(DEVICE_IP_FETCH_RETRY_DELAY)
-
-if not _ip:
-    print("\n❌ [FATAL ERROR] ไม่สามารถดึง IP ของอุปกรณ์จาก Laravel ได้เลย")
-    print("   เช็คว่า: 1) Laravel รันอยู่ไหม  2) ESP32 ต่อ WiFi และ register IP สำเร็จหรือยัง")
-    exit()
-
-refresh_device_urls(_ip)
-last_ip_check_time = time.time()
-
 print(f"🔄 กำลังพยายามเชื่อมต่อไปยังกล้อง IoT: {STREAM_URL}")
 cap = cv2.VideoCapture(STREAM_URL)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -215,13 +158,13 @@ def send_alert_to_laravel(alert_type: str):
         "driver_id": DRIVER_ID,
         "device_id": DEVICE_ID,
         "type": alert_type,
-        "snapshot_url": f"{LARAVEL_BASE_URL}/storage/snapshots/default.jpg",
+        "snapshot_url": "http://10.179.216.154:8000/storage/snapshots/default.jpg",
         "latitude": 13.7563,
         "longitude": 100.5018
     }
     headers = {
         "Content-Type": "application/json",
-        "Accept": "application/json",
+         "Accept": "application/json",
         "X-API-KEY": IOT_API_KEY
     }
 
@@ -252,20 +195,6 @@ def send_alert_to_laravel(alert_type: str):
 
 
 while True:
-    # ---- เช็คว่า IP ของ ESP32 เปลี่ยนไปไหม (เผื่อ ESP32 รีสตาร์ท/สลับ WiFi ระหว่างรัน) ----
-    now = time.time()
-    if now - last_ip_check_time >= DEVICE_IP_REFRESH_SECONDS:
-        last_ip_check_time = now
-        new_ip = fetch_device_ip()
-        if new_ip and new_ip != DEVICE_IP:
-            print(f"🔄 [IP CHANGED] ตรวจพบ IP อุปกรณ์เปลี่ยนจาก {DEVICE_IP} -> {new_ip}")
-            refresh_device_urls(new_ip)
-            print("🔄 กำลัง Reconnect สตรีมไปที่ IP ใหม่...")
-            cap.release()
-            cap = cv2.VideoCapture(STREAM_URL)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            fail_count = 0
-
     cap.grab()
     ret, frame = cap.read()
 
@@ -348,7 +277,7 @@ while True:
     )
     cv2.putText(
         frame,
-        f"yaw: {yaw_deg:.1f} deg | IP: {DEVICE_IP}",
+        f"yaw: {yaw_deg:.1f} deg",
         (10, 50),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.45,

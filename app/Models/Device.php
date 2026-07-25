@@ -20,6 +20,8 @@ class Device extends Model
         'device_name',
         'status',
         'is_active',
+        'ip_address',   
+        'ip_updated_at',
     ];
 
     protected $casts = [

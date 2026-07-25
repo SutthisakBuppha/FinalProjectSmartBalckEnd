@@ -148,3 +148,7 @@ Route::get('/driver-latest-alert', function (Request $request) {
         ->first();
     return response()->json(['success' => true, 'data' => $latestAlert], 200);
 });
+
+// ip devices
+Route::post('/devices/{id}/register-ip', [DeviceController::class, 'registerIp']);
+Route::get('/devices/{id}/ip', [DeviceController::class, 'getIp']);

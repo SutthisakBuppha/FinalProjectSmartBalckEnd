@@ -152,7 +152,7 @@ class DeviceController extends Controller
 
         $extension = $file->getClientOriginalExtension();
         $fileName = $type . '_' . now()->format('YmdHis') . '_' . Str::random(6) . '.' . $extension;
-    // เสียงจะถูกส่งไปเก็บที่ storage/app/public/devices
+        // เสียงจะถูกส่งไปเก็บที่ storage/app/public/devices
         $folder = "devices/{$deviceId}/{$type}s";
         $path = $file->storeAs($folder, $fileName, 'public');
 
@@ -196,5 +196,22 @@ class DeviceController extends Controller
         $media->delete();
 
         return response()->json(['success' => true]);
+    }
+
+    public function registerIp(Request $request, $id)
+    {
+        $request->validate(['ip_address' => 'required|ip']);
+        $device = Device::findOrFail($id);
+        $device->update([
+            'ip_address' => $request->ip_address,
+            'ip_updated_at' => now(),
+        ]);
+        return response()->json(['status' => 'ok']);
+    }
+
+    public function getIp($id)
+    {
+        $device = Device::findOrFail($id);
+        return response()->json(['ip_address' => $device->ip_address]);
     }
 }
