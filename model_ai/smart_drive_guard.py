@@ -3,6 +3,7 @@ import numpy as np
 import requests
 import time
 import json
+import os
 from datetime import datetime
 
 import mediapipe as mp
@@ -16,21 +17,97 @@ from mediapipe.tasks.python import vision as mp_vision
 LARAVEL_BASE_URL = "http://DESKTOP-8H547TA.local:8000"
 
 LARAVEL_WEBHOOK_URL = f"{LARAVEL_BASE_URL}/api/alerts"
-DEVICE_IP_ENDPOINT = f"{LARAVEL_BASE_URL}/api/devices/19/ip"
+DEVICE_LOOKUP_ENDPOINT = f"{LARAVEL_BASE_URL}/api/devices/lookup"
+DEVICE_AUTO_DETECT_ENDPOINT = f"{LARAVEL_BASE_URL}/api/devices/auto-detect"
 
 IOT_API_KEY = "smart-iot-2026-secretkey"
+IOT_API_HEADERS = {"X-API-KEY": IOT_API_KEY}
 
-TRIP_ID = "110"
-DRIVER_ID = "50"
-DEVICE_ID = "19"
+# ==================== Serial Number ของกล้องที่เครื่องนี้ดูแล ====================
+# 🟢 ไม่ต้องให้ผู้ใช้พิมพ์กรอกเองแล้ว -- ดึงมาจาก "ฐานข้อมูลที่เคยลงทะเบียนไว้ครั้งแรก"
+# (ตาราง devices ใน Laravel ที่ admin เพิ่มอุปกรณ์ไว้แล้ว) โดยอัตโนมัติ
+# ลำดับความสำคัญ:
+#   1) Environment variable DASHCAM_SERIAL_NUMBER (เหมาะกับรันเป็น service/Docker/มีกล้องหลายตัว)
+#   2) ไฟล์ device_config.json ที่แคชไว้จากการรันครั้งก่อน (กันยิง API ซ้ำทุกครั้งที่รัน)
+#   3) ถาม Laravel ผ่าน endpoint /api/devices/auto-detect ให้ไปดึง serial_number ล่าสุด
+#      ที่เคยลงทะเบียน/เชื่อมต่อในฐานข้อมูลมาใช้เอง (ตาม concept 1 เครื่อง PC ต่อกล้อง 1 ตัวเสมอ)
+CONFIG_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device_config.json")
 
-# ---- ตัวแปร IP ของ ESP32 (ESP32 ไปลงทะเบียนไว้กับ Laravel เอง ตอนบูต) ----
+
+def fetch_serial_number_from_database() -> str | None:
+    """ถาม Laravel ให้ไปดึง serial_number ของอุปกรณ์ที่เคยลงทะเบียนไว้แล้วในฐานข้อมูลมาใช้เอง"""
+    try:
+        res = requests.get(
+            DEVICE_AUTO_DETECT_ENDPOINT,
+            headers=IOT_API_HEADERS,
+            timeout=10,
+        )
+        res.raise_for_status()
+        payload = res.json()
+        data = payload.get("data") or {}
+        serial = data.get("serial_number")
+        if serial:
+            return str(serial).strip()
+        print(f"⚠️ Laravel ตอบกลับมาแต่ไม่พบ serial_number: {payload.get('message')}")
+        return None
+    except Exception as e:
+        print(f"❌ ดึง serial_number จากฐานข้อมูลไม่สำเร็จ: {e}")
+        return None
+
+
+def load_device_serial_number() -> str:
+    # 1) Environment variable มาก่อนเสมอ (เผื่ออยากสั่ง override ตอนรัน โดยไม่ต้องแก้ไฟล์ config)
+    env_value = os.environ.get("DASHCAM_SERIAL_NUMBER")
+    if env_value:
+        print(f"🔧 ใช้ serial_number จาก environment variable DASHCAM_SERIAL_NUMBER = {env_value}")
+        return env_value.strip()
+
+    # 2) ไฟล์ config ที่เซฟไว้จากการรันครั้งก่อน
+    if os.path.exists(CONFIG_FILE_PATH):
+        try:
+            with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            if cfg.get("serial_number"):
+                print(f"🔧 ใช้ serial_number จาก {CONFIG_FILE_PATH} = {cfg['serial_number']}")
+                return str(cfg["serial_number"]).strip()
+        except Exception as e:
+            print(f"⚠️ อ่านไฟล์ {CONFIG_FILE_PATH} ไม่สำเร็จ: {e}")
+
+    # 3) ยังไม่เคยแคชไว้ -> ไปดึงจากฐานข้อมูลที่เคยลงทะเบียนไว้ครั้งแรกโดยอัตโนมัติ (ไม่ต้องพิมพ์กรอกเอง)
+    print("🆕 ยังไม่เคยแคช serial_number ไว้บนเครื่องนี้ -> กำลังดึงจากฐานข้อมูลอัตโนมัติ...")
+    serial = fetch_serial_number_from_database()
+
+    if not serial:
+        print("\n❌ [FATAL ERROR] ดึง serial_number จากฐานข้อมูลไม่สำเร็จ")
+        print("   เช็คว่า: 1) Laravel รันอยู่ไหม  2) admin เพิ่มอุปกรณ์นี้ไว้ในระบบแล้วหรือยัง (ตาราง devices)")
+        exit()
+
+    try:
+        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"serial_number": serial}, f, ensure_ascii=False, indent=2)
+        print(f"✅ บันทึก serial_number ({serial}) ไว้ใน {CONFIG_FILE_PATH} แล้ว (รันครั้งหน้าไม่ต้องดึงซ้ำ)")
+    except Exception as e:
+        print(f"⚠️ บันทึกไฟล์ config ไม่สำเร็จ: {e} (จะดึงจากฐานข้อมูลใหม่ทุกครั้งที่รัน)")
+
+    return serial
+
+
+DEVICE_SERIAL_NUMBER = load_device_serial_number()
+if not DEVICE_SERIAL_NUMBER:
+    print("\n❌ [FATAL ERROR] ไม่มี serial_number ให้ใช้งาน -- ตั้งค่าผ่าน environment variable "
+          "DASHCAM_SERIAL_NUMBER หรือให้ admin เพิ่มอุปกรณ์ในฐานข้อมูลก่อนรันใหม่")
+    exit()
+
+# ---- ตัวแปรที่ดึงมาจาก Laravel (ไม่ hardcode แล้ว) ----
+DEVICE_ID = None
+DRIVER_ID = None
+TRIP_ID = None
 DEVICE_IP = None
 STREAM_URL = None
 BUZZER_ON_URL = None
 BUZZER_OFF_URL = None
 
-DEVICE_IP_REFRESH_SECONDS = 30          # เช็ค IP ใหม่จาก Laravel ทุกๆ กี่วิ (เผื่อ ESP32 เปลี่ยน WiFi)
+DEVICE_IP_REFRESH_SECONDS = 30          # เช็ค IP/driver/trip ใหม่จาก Laravel ทุกๆ กี่วิ (เผื่อ ESP32 เปลี่ยน WiFi หรือเริ่ม trip ใหม่)
 DEVICE_IP_FETCH_RETRY_DELAY = 3
 DEVICE_IP_FETCH_MAX_RETRIES = 10        # ตอนเริ่มโปรแกรม ลองกี่ครั้งก่อนยอมแพ้
 
@@ -114,51 +191,69 @@ def analyze_frame(frame_bgr):
     return True, eyes_closed, head_turned, yaw_deg
 
 
-def fetch_device_ip():
-    """ดึง IP ล่าสุดของ ESP32 จาก Laravel (ESP32 ไป self-register ไว้ตอนบูต)"""
+def fetch_device_info():
+    """
+    ถาม Laravel ด้วย serial_number ของบอร์ดนี้ -> ได้ device_id, driver_id, trip_id, ip_address กลับมา
+    คืนค่าเป็น dict ถ้าสำเร็จ, None ถ้าไม่สำเร็จ (เช่น ยังไม่ได้ลงทะเบียน/ยังไม่มี trip ที่กำลังทำอยู่)
+    """
     try:
-        res = requests.get(DEVICE_IP_ENDPOINT, timeout=LARAVEL_TIMEOUT_SECONDS)
+        res = requests.get(
+            DEVICE_LOOKUP_ENDPOINT,
+            params={"serial_number": DEVICE_SERIAL_NUMBER},
+            headers=IOT_API_HEADERS,
+            timeout=LARAVEL_TIMEOUT_SECONDS,
+        )
         res.raise_for_status()
-        data = res.json()
-        ip = data.get("ip_address")
-        if not ip:
+        payload = res.json()
+        data = payload.get("data") or {}
+
+        if not data.get("device_id"):
+            print("⚠️ Laravel ตอบกลับมา แต่ไม่พบ device_id (serial number นี้ยังไม่ได้ลงทะเบียน)")
+            return None
+        if not data.get("ip_address"):
             print("⚠️ Laravel ตอบกลับมา แต่ยังไม่มี IP ของ ESP32 (ยังไม่เคย register)")
             return None
-        return ip
+
+        return data
     except Exception as e:
-        print(f"❌ ดึง IP อุปกรณ์จาก Laravel ไม่สำเร็จ: {e}")
+        print(f"❌ ดึงข้อมูลอุปกรณ์จาก Laravel ไม่สำเร็จ: {e}")
         return None
 
 
-def refresh_device_urls(new_ip):
-    """อัปเดตตัวแปร URL ทั้งหมดเมื่อ IP เปลี่ยน"""
-    global DEVICE_IP, STREAM_URL, BUZZER_ON_URL, BUZZER_OFF_URL
-    DEVICE_IP = new_ip
+def refresh_device_urls(info):
+    """อัปเดต DEVICE_ID/DRIVER_ID/TRIP_ID/URL ทั้งหมดจากข้อมูลที่ Laravel ตอบกลับมา"""
+    global DEVICE_ID, DRIVER_ID, TRIP_ID, DEVICE_IP, STREAM_URL, BUZZER_ON_URL, BUZZER_OFF_URL
+    DEVICE_ID = info.get("device_id")
+    DRIVER_ID = info.get("driver_id")
+    TRIP_ID = info.get("trip_id")
+    DEVICE_IP = info.get("ip_address")
     STREAM_URL = f"http://{DEVICE_IP}:81/stream"
     BUZZER_ON_URL = f"http://{DEVICE_IP}:82/buzzer/on"
     BUZZER_OFF_URL = f"http://{DEVICE_IP}:82/buzzer/off"
-    print(f"🌐 ใช้ IP อุปกรณ์: {DEVICE_IP}")
+    print(f"🌐 อุปกรณ์: device_id={DEVICE_ID} driver_id={DRIVER_ID} trip_id={TRIP_ID} ip={DEVICE_IP}")
     print(f"   STREAM_URL     = {STREAM_URL}")
     print(f"   BUZZER_ON_URL  = {BUZZER_ON_URL}")
     print(f"   BUZZER_OFF_URL = {BUZZER_OFF_URL}")
+    if not TRIP_ID:
+        print("⚠️ driver คนนี้ยังไม่มี trip ที่กำลังทำอยู่ -> alert จะยังส่งได้ แต่ trip_id จะเป็นค่าว่าง")
 
 
-# ==================== ดึง IP ของ ESP32 ตอนเริ่มโปรแกรม (รอจนกว่าจะได้) ====================
-print(f"🔄 กำลังขอ IP ของอุปกรณ์จาก Laravel: {DEVICE_IP_ENDPOINT}")
-_ip = None
+# ==================== ดึงข้อมูลอุปกรณ์ตอนเริ่มโปรแกรม (รอจนกว่าจะได้) ====================
+print(f"🔄 กำลังขอข้อมูลอุปกรณ์จาก Laravel (serial={DEVICE_SERIAL_NUMBER}): {DEVICE_LOOKUP_ENDPOINT}")
+_info = None
 for attempt in range(1, DEVICE_IP_FETCH_MAX_RETRIES + 1):
-    _ip = fetch_device_ip()
-    if _ip:
+    _info = fetch_device_info()
+    if _info:
         break
-    print(f"⏳ ยังไม่ได้ IP ลองใหม่ครั้งที่ {attempt}/{DEVICE_IP_FETCH_MAX_RETRIES}...")
+    print(f"⏳ ยังไม่ได้ข้อมูล ลองใหม่ครั้งที่ {attempt}/{DEVICE_IP_FETCH_MAX_RETRIES}...")
     time.sleep(DEVICE_IP_FETCH_RETRY_DELAY)
 
-if not _ip:
-    print("\n❌ [FATAL ERROR] ไม่สามารถดึง IP ของอุปกรณ์จาก Laravel ได้เลย")
-    print("   เช็คว่า: 1) Laravel รันอยู่ไหม  2) ESP32 ต่อ WiFi และ register IP สำเร็จหรือยัง")
+if not _info:
+    print("\n❌ [FATAL ERROR] ไม่สามารถดึงข้อมูลอุปกรณ์จาก Laravel ได้เลย")
+    print("   เช็คว่า: 1) Laravel รันอยู่ไหม  2) serial_number นี้ลงทะเบียนในระบบแล้วหรือยัง  3) ESP32 ต่อ WiFi และ register IP สำเร็จหรือยัง")
     exit()
 
-refresh_device_urls(_ip)
+refresh_device_urls(_info)
 last_ip_check_time = time.time()
 
 print(f"🔄 กำลังพยายามเชื่อมต่อไปยังกล้อง IoT: {STREAM_URL}")
@@ -256,15 +351,25 @@ while True:
     now = time.time()
     if now - last_ip_check_time >= DEVICE_IP_REFRESH_SECONDS:
         last_ip_check_time = now
-        new_ip = fetch_device_ip()
-        if new_ip and new_ip != DEVICE_IP:
-            print(f"🔄 [IP CHANGED] ตรวจพบ IP อุปกรณ์เปลี่ยนจาก {DEVICE_IP} -> {new_ip}")
-            refresh_device_urls(new_ip)
-            print("🔄 กำลัง Reconnect สตรีมไปที่ IP ใหม่...")
-            cap.release()
-            cap = cv2.VideoCapture(STREAM_URL)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            fail_count = 0
+        new_info = fetch_device_info()
+        if new_info:
+            ip_changed = new_info.get("ip_address") != DEVICE_IP
+            trip_changed = new_info.get("trip_id") != TRIP_ID
+
+            if ip_changed:
+                print(f"🔄 [IP CHANGED] ตรวจพบ IP อุปกรณ์เปลี่ยนจาก {DEVICE_IP} -> {new_info.get('ip_address')}")
+            if trip_changed:
+                print(f"🔄 [TRIP CHANGED] trip_id เปลี่ยนจาก {TRIP_ID} -> {new_info.get('trip_id')}")
+
+            if ip_changed or trip_changed:
+                refresh_device_urls(new_info)
+
+            if ip_changed:
+                print("🔄 กำลัง Reconnect สตรีมไปที่ IP ใหม่...")
+                cap.release()
+                cap = cv2.VideoCapture(STREAM_URL)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                fail_count = 0
 
     cap.grab()
     ret, frame = cap.read()

@@ -198,6 +198,135 @@ class DeviceController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /**
+     * ให้ script ฝั่ง IoT (smart_drive_guard.py) เรียกตอนเริ่มโปรแกรม/เป็นระยะ
+     * ส่ง serial_number เข้ามา -> คืน device_id, driver_id, trip_id (ล่าสุดที่ยังไม่จบ) ให้ครบ
+     * เพื่อไม่ต้อง hardcode ตัวเลขพวกนี้ไว้ในโค้ด (ใช้ได้กับทุกอุปกรณ์ในโค้ดชุดเดียวกัน)
+     */
+    // public function lookupBySerial(Request $request)
+    // {
+    //     $request->validate([
+    //         'serial_number' => 'required|string',
+    //     ]);
+
+    //     $device = Device::where('serial_number', $request->serial_number)->first();
+
+    //     if (!$device) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'ไม่พบอุปกรณ์นี้ในระบบ (ยังไม่ได้ลงทะเบียน)',
+    //         ], 404);
+    //     }
+
+    //     // $driverId = $device->driver_id;
+    //     $driverId = \App\Models\DriverDevice::where('device_id', $device->device_id)
+    //         ->where('is_active', 1)
+    //         ->value('driver_id');
+
+    //     $tripId = null;
+    //     if ($driverId) {
+    //         // trip ล่าสุดที่ยัง "ไม่จบ" ของ driver คนนี้
+    //         // ⚠️ ปรับเงื่อนไขนี้ให้ตรงกับ schema จริงของตาราง trips ถ้าจำเป็น:
+    //         //    - ถ้ามีคอลัมน์ ended_at (nullable) ใช้ whereNull('ended_at')
+    //         //    - ถ้าใช้ status string ให้เปลี่ยนเป็น where('status', 'กำลังเดินทาง') เป็นต้น
+    //         $tripQuery = \App\Models\Trip::where('driver_id', $driverId);
+
+    //         if (\Illuminate\Support\Facades\Schema::hasColumn('trips', 'ended_at')) {
+    //             $tripQuery->whereNull('ended_at');
+    //         } elseif (\Illuminate\Support\Facades\Schema::hasColumn('trips', 'status')) {
+    //             $tripQuery->whereNotIn('status', ['เสร็จสิ้น', 'จบทริป', 'completed']);
+    //         }
+
+    //         $trip = $tripQuery->orderByDesc('created_at')->first();
+    //         $tripId = $trip?->id;
+    //     }
+
+    //     return response()->json([
+    //         'success' => true,
+    //         'data' => [
+    //             'device_id'   => $device->device_id,
+    //             'driver_id'   => $driverId,
+    //             'trip_id'     => $tripId,
+    //             'ip_address'  => $device->ip_address,
+    //         ],
+    //     ]);
+    // }
+    public function lookupBySerial(Request $request)
+    {
+        $request->validate([
+            'serial_number' => 'required|string',
+        ]);
+
+        $device = Device::where('serial_number', $request->serial_number)->first();
+
+        if (!$device) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ไม่พบอุปกรณ์นี้ในระบบ (ยังไม่ได้ลงทะเบียน)',
+            ], 404);
+        }
+
+        // ✅ ดึง driver_id จาก pivot driver_devices ที่ is_active = 1 แทน
+        $driverId = $device->driverDevices()
+            ->where('is_active', 1)
+            ->latest('assigned_at')
+            ->value('driver_id');
+
+        $tripId = null;
+        if ($driverId) {
+            $tripQuery = \App\Models\Trip::where('driver_id', $driverId);
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('trips', 'ended_at')) {
+                $tripQuery->whereNull('ended_at');
+            } elseif (\Illuminate\Support\Facades\Schema::hasColumn('trips', 'status')) {
+                $tripQuery->whereNotIn('status', ['เสร็จสิ้น', 'จบทริป', 'completed']);
+            }
+
+            $trip = $tripQuery->orderByDesc('created_at')->first();
+            $tripId = $trip?->id;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'device_id'   => $device->device_id,
+                'driver_id'   => $driverId,
+                'trip_id'     => $tripId,
+                'ip_address'  => $device->ip_address,
+            ],
+        ]);
+    }
+    /**
+     * ให้ script ฝั่ง PC (smart_drive_guard.py) เรียกตอนเริ่มโปรแกรม "ครั้งแรก" เท่านั้น
+     * เพื่อดึง serial_number ของกล้องที่ "เคยลงทะเบียนไว้แล้ว" ในฐานข้อมูล มาใช้เอง
+     * โดยไม่ต้องให้ผู้ใช้พิมพ์กรอกเอง (ตาม concept 1 เครื่อง PC ต่อกล้อง 1 ตัวเสมอ)
+     *
+     * หลักการเลือก: เอาอุปกรณ์ที่ "ยังมีการเชื่อมต่อล่าสุด" มากที่สุด
+     * (ดูจาก last_heartbeat_at หรือถ้าไม่มีก็ ip_updated_at) เพราะแปลว่าเป็นตัวที่เพิ่ง
+     * register เข้ามาจริง ๆ (ESP32 บอร์ดที่กำลังใช้งานอยู่ตอนนี้)
+     */
+    public function autoDetectSerial()
+    {
+        $device = Device::whereNotNull('serial_number')
+            ->orderByRaw('COALESCE(last_heartbeat_at, ip_updated_at) DESC')
+            ->first();
+
+        if (!$device) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ยังไม่มีอุปกรณ์ใดลงทะเบียน serial_number ไว้ในระบบเลย กรุณาเพิ่มอุปกรณ์ผ่าน Admin Panel ก่อน',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'serial_number' => $device->serial_number,
+                'device_id'     => $device->device_id,
+            ],
+        ]);
+    }
+
     public function registerIp(Request $request, $id)
     {
         $request->validate(['ip_address' => 'required|ip']);

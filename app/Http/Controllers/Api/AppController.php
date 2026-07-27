@@ -97,7 +97,7 @@ class AppController extends Controller
             if ($request->has('device_id')) {
                 $deviceData['device_id'] = $request->device_id;
             } else {
-                $deviceData['device_id'] = (string) \Illuminate\Support\Str::random(11);
+                $deviceData['device_id'] = (string) \Illuminate\Support\Str::random(8);
             }
 
             $device = Device::create($deviceData);
@@ -110,7 +110,7 @@ class AppController extends Controller
             ];
 
             // สร้าง driver_device_id
-            $driverDeviceData['driver_device_id'] = (string) \Illuminate\Support\Str::random(11);
+            $driverDeviceData['driver_device_id'] = (string) \Illuminate\Support\Str::random(8);
 
             DriverDevice::create($driverDeviceData);
 
@@ -194,7 +194,7 @@ class AppController extends Controller
         if (!$setting->exists && $request->has('setting_id')) {
             $setting->setting_id = $request->setting_id;
         } elseif (!$setting->exists) {
-            $setting->setting_id = (string) \Illuminate\Support\Str::random(11);
+            $setting->setting_id = (string) \Illuminate\Support\Str::random(8);
         }
 
         $setting->fill($request->only(['volume_level', 'sound_enabled', 'active_tone']));
@@ -260,7 +260,7 @@ class AppController extends Controller
         if ($request->has('trip_id')) {
             $tripData['trip_id'] = $request->trip_id;
         } else {
-            $tripData['trip_id'] = (string) \Illuminate\Support\Str::random(11);
+            $tripData['trip_id'] = (string) \Illuminate\Support\Str::random(8);
         }
 
         $trip = Trip::create($tripData);
@@ -354,7 +354,7 @@ class AppController extends Controller
         if ($request->has('location_id')) {
             $locationData['location_id'] = $request->location_id;
         } else {
-            $locationData['location_id'] = (string) \Illuminate\Support\Str::random(11);
+            $locationData['location_id'] = (string) \Illuminate\Support\Str::random(8);
         }
 
         $location = TripLocation::create($locationData);
@@ -461,7 +461,7 @@ class AppController extends Controller
         if ($request->has('alert_id')) {
             $alertData['alert_id'] = $request->alert_id;
         } else {
-            $alertData['alert_id'] = (string) \Illuminate\Support\Str::random(11);
+            $alertData['alert_id'] = (string) \Illuminate\Support\Str::random(8);
         }
 
         $alert = Alert::create($alertData);
@@ -563,7 +563,7 @@ class AppController extends Controller
         if ($request->has('noti_id')) {
             $notificationData['noti_id'] = $request->noti_id;
         } else {
-            $notificationData['noti_id'] = (string) \Illuminate\Support\Str::random(11);
+            $notificationData['noti_id'] = (string) \Illuminate\Support\Str::random(8);
         }
 
         $notification = Notification::create($notificationData);

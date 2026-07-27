@@ -22,7 +22,7 @@ class AlertController extends Controller
     {
         $request->validate([
             'alert_id'     => 'sometimes|required|string|max:8|unique:alerts,alert_id',
-            'trip_id'      => 'required|string|exists:trips,trip_id',
+            'trip_id'      => 'nullable|string|exists:trips,trip_id', // <-- แก้ไขบรรทัดนี้
             'driver_id'    => 'required|string|exists:drivers,driver_id',
             'device_id'    => 'nullable|string|exists:devices,device_id',
             'type'         => 'required|in:ง่วงนอน,ใช้โทรศัพท์,เสียสมาธิ,เหม่อลอย,หาว',

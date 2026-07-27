@@ -37,6 +37,15 @@ Route::middleware('iot.apikey')->group(function () {
     // 📌 ย้ายการยิง Alert จาก AI Guard มาเข้า endpoint นี้แทน (ทำผ่าน AlertController)
     Route::post('/alerts',                    [AlertController::class, 'store']);
     Route::post('/trips/{trip}/locations',    [TripLocationController::class, 'store']);
+
+    // 🆕 ให้ smart_drive_guard.py (ฝั่ง PC) เรียกตอนเริ่มโปรแกรม เพื่อดึง serial_number
+    // ของอุปกรณ์ที่ "เคยลงทะเบียนไว้แล้ว" ในฐานข้อมูลมาใช้เองโดยอัตโนมัติ
+    // แทนการให้ผู้ใช้พิมพ์กรอก serial_number เอง
+    Route::get('/devices/auto-detect', [DeviceController::class, 'autoDetectSerial']);
+
+    // 🔄 ย้ายมาไว้ในกลุ่มนี้แทน (เดิมอยู่นอกกลุ่ม ไม่ต้องใช้ key เลย แต่ smart_drive_guard.py
+    // ส่ง X-API-KEY มาด้วยอยู่แล้วตอนเรียก lookup จึงย้ายเข้ามาให้ตรงกับ middleware จริง)
+    Route::get('/devices/lookup', [DeviceController::class, 'lookupBySerial']);
 });
 
 // ── Driver App routes (Sanctum token ของคนขับ) ───────────────
