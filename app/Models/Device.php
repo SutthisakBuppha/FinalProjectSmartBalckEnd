@@ -15,18 +15,22 @@ class Device extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
-        'device_id',  // เพิ่มเพราะ primary key เป็น string/char แล้ว
+        'device_id',      // เพิ่มเพราะ primary key เป็น string/char แล้ว
         'serial_number',
         'device_name',
+        'device_type',    // เพิ่ม: ใช้ตอน store() ใน DeviceController
         'status',
+        'last_active',    // เพิ่ม: ใช้ตอน heartbeat() / markStaleDevicesOffline()
+        'last_heartbeat_at',
         'is_active',
-        'ip_address',   
+        'ip_address',
         'ip_updated_at',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'last_heartbeat_at' => 'datetime',
+        'ip_updated_at' => 'datetime',
     ];
 
     public function drivers()
@@ -49,5 +53,15 @@ class Device extends Model
     public function setting()
     {
         return $this->hasOne(DeviceSetting::class, 'device_id', 'device_id');
+    }
+
+    public function media()
+    {
+        return $this->hasMany(DeviceMedia::class, 'device_id', 'device_id');
+    }
+
+    public function trips()
+    {
+        return $this->hasMany(Trip::class, 'device_id', 'device_id');
     }
 }

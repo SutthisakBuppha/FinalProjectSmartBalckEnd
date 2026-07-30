@@ -10,9 +10,12 @@ class DriverDevice extends Model
     use HasFactory;
 
     protected $primaryKey = 'driver_device_id';
-    public $timestamps = false;   // ← สำคัญ ตารางไม่มี created_at/updated_at
+    public $incrementing = false;   // ← เพิ่ม: ไม่งั้น insert จะพังเพราะ PK เป็น char ไม่ใช่ int
+    protected $keyType = 'string';  // ← เพิ่ม: บอก Eloquent ว่า PK เป็น string
+    public $timestamps = false;     // สำคัญ ตารางไม่มี created_at/updated_at
 
     protected $fillable = [
+        'driver_device_id',  // ← เพิ่ม: เพราะ PK เป็น string/char แล้ว ต้อง gen เองด้วย Str::random()
         'driver_id',
         'device_id',
         'assigned_at',

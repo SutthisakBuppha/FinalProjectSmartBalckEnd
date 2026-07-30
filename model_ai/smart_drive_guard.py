@@ -24,15 +24,12 @@ IOT_API_KEY = "smart-iot-2026-secretkey"
 IOT_API_HEADERS = {"X-API-KEY": IOT_API_KEY}
 
 # ==================== Serial Number ของกล้องที่เครื่องนี้ดูแล ====================
-# 🟢 ไม่ต้องให้ผู้ใช้พิมพ์กรอกเองแล้ว -- ดึงมาจาก "ฐานข้อมูลที่เคยลงทะเบียนไว้ครั้งแรก"
-# (ตาราง devices ใน Laravel ที่ admin เพิ่มอุปกรณ์ไว้แล้ว) โดยอัตโนมัติ
+# 🟢 ดึงจากฐานข้อมูล Laravel (ตาราง devices) สดทุกครั้งที่รัน ไม่มีไฟล์ cache แล้ว
+# (ตัด device_config.json ออก เพื่อกันปัญหาค่าเก่าค้าง ไม่ตรงกับ MAC จริงของบอร์ด)
 # ลำดับความสำคัญ:
 #   1) Environment variable DASHCAM_SERIAL_NUMBER (เหมาะกับรันเป็น service/Docker/มีกล้องหลายตัว)
-#   2) ไฟล์ device_config.json ที่แคชไว้จากการรันครั้งก่อน (กันยิง API ซ้ำทุกครั้งที่รัน)
-#   3) ถาม Laravel ผ่าน endpoint /api/devices/auto-detect ให้ไปดึง serial_number ล่าสุด
+#   2) ถาม Laravel ผ่าน endpoint /api/devices/auto-detect ให้ไปดึง serial_number ล่าสุด
 #      ที่เคยลงทะเบียน/เชื่อมต่อในฐานข้อมูลมาใช้เอง (ตาม concept 1 เครื่อง PC ต่อกล้อง 1 ตัวเสมอ)
-CONFIG_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device_config.json")
-
 
 def fetch_serial_number_from_database() -> str | None:
     """ถาม Laravel ให้ไปดึง serial_number ของอุปกรณ์ที่เคยลงทะเบียนไว้แล้วในฐานข้อมูลมาใช้เอง"""
@@ -56,25 +53,14 @@ def fetch_serial_number_from_database() -> str | None:
 
 
 def load_device_serial_number() -> str:
-    # 1) Environment variable มาก่อนเสมอ (เผื่ออยากสั่ง override ตอนรัน โดยไม่ต้องแก้ไฟล์ config)
+    # 1) Environment variable มาก่อนเสมอ (เผื่ออยากสั่ง override ตอนรัน)
     env_value = os.environ.get("DASHCAM_SERIAL_NUMBER")
     if env_value:
         print(f"🔧 ใช้ serial_number จาก environment variable DASHCAM_SERIAL_NUMBER = {env_value}")
         return env_value.strip()
 
-    # 2) ไฟล์ config ที่เซฟไว้จากการรันครั้งก่อน
-    if os.path.exists(CONFIG_FILE_PATH):
-        try:
-            with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            if cfg.get("serial_number"):
-                print(f"🔧 ใช้ serial_number จาก {CONFIG_FILE_PATH} = {cfg['serial_number']}")
-                return str(cfg["serial_number"]).strip()
-        except Exception as e:
-            print(f"⚠️ อ่านไฟล์ {CONFIG_FILE_PATH} ไม่สำเร็จ: {e}")
-
-    # 3) ยังไม่เคยแคชไว้ -> ไปดึงจากฐานข้อมูลที่เคยลงทะเบียนไว้ครั้งแรกโดยอัตโนมัติ (ไม่ต้องพิมพ์กรอกเอง)
-    print("🆕 ยังไม่เคยแคช serial_number ไว้บนเครื่องนี้ -> กำลังดึงจากฐานข้อมูลอัตโนมัติ...")
+    # 2) ดึงจากฐานข้อมูลสดทุกครั้ง (ไม่มีไฟล์ cache แล้ว -- กัน serial ค้างของเก่าไม่ตรงกับบอร์ดจริง)
+    print("🔄 กำลังดึง serial_number ล่าสุดจากฐานข้อมูล...")
     serial = fetch_serial_number_from_database()
 
     if not serial:
@@ -82,13 +68,7 @@ def load_device_serial_number() -> str:
         print("   เช็คว่า: 1) Laravel รันอยู่ไหม  2) admin เพิ่มอุปกรณ์นี้ไว้ในระบบแล้วหรือยัง (ตาราง devices)")
         exit()
 
-    try:
-        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump({"serial_number": serial}, f, ensure_ascii=False, indent=2)
-        print(f"✅ บันทึก serial_number ({serial}) ไว้ใน {CONFIG_FILE_PATH} แล้ว (รันครั้งหน้าไม่ต้องดึงซ้ำ)")
-    except Exception as e:
-        print(f"⚠️ บันทึกไฟล์ config ไม่สำเร็จ: {e} (จะดึงจากฐานข้อมูลใหม่ทุกครั้งที่รัน)")
-
+    print(f"✅ ใช้ serial_number จากฐานข้อมูล = {serial}")
     return serial
 
 

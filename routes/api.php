@@ -145,6 +145,7 @@ Route::post('/devices/heartbeat', [DeviceController::class, 'heartbeat']);
 Route::post('/device-media/upload',      [DeviceController::class, 'uploadMedia']);
 Route::get('/device-media/{deviceId}',   [DeviceController::class, 'indexMedia']);
 Route::delete('/device-media/{mediaId}', [DeviceController::class, 'destroyMedia']);
+Route::patch('/device-media/{mediaId}/select', [DeviceController::class, 'selectMedia']);
 
 // 🔄 [GET] ดึงประวัติ Alert ล่าสุด (สำหรับ Flutter ทำ Polling เช็กให้เด้งจอ Alert อัตโนมัติ)
 Route::get('/driver-latest-alert', function (Request $request) {

@@ -159,6 +159,7 @@ class DeviceController extends Controller
         $url = asset('storage/' . $path);
 
         $media = DeviceMedia::create([
+            'media_id'  => (string) Str::random(10),
             'device_id' => $deviceId,
             'type'      => $type,
             'file_name' => $fileName,
@@ -170,10 +171,12 @@ class DeviceController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
+                'media_id'  => $media->media_id,
                 'file_name' => $media->file_name,
                 'url'       => $media->url,
                 'file_size' => $media->file_size,
                 'type'      => $media->type,
+                'is_active' => $media->is_active,
             ],
         ], 201);
     }
@@ -181,13 +184,27 @@ class DeviceController extends Controller
     public function indexMedia(string $deviceId)
     {
         // เปลี่ยน $deviceId เป็น string type
+        // ✅ เพิ่ม media_id และ is_active ให้ Flutter ใช้เรียก selectMedia() ได้
         $items = DeviceMedia::where('device_id', $deviceId)
             ->orderByDesc('created_at')
-            ->get(['file_name', 'url', 'file_size', 'type', 'created_at']);
+            ->get(['media_id', 'file_name', 'url', 'file_size', 'type', 'is_active', 'created_at']);
 
         return response()->json(['success' => true, 'data' => $items]);
     }
+    public function selectMedia(string $mediaId)
+{
+    $media = DeviceMedia::findOrFail($mediaId);
 
+    // รีเซ็ตทุกแถวของ device + type เดียวกันให้เป็น 0 ก่อน
+    DeviceMedia::where('device_id', $media->device_id)
+        ->where('type', $media->type)
+        ->update(['is_active' => false]);
+
+    // แล้วค่อยตั้งแถวที่เลือกให้เป็น 1
+    $media->update(['is_active' => true]);
+
+    return response()->json(['success' => true, 'data' => $media]);
+}
     public function destroyMedia(string $mediaId)
     {
         // เปลี่ยน $mediaId เป็น string type
@@ -197,60 +214,6 @@ class DeviceController extends Controller
 
         return response()->json(['success' => true]);
     }
-
-    /**
-     * ให้ script ฝั่ง IoT (smart_drive_guard.py) เรียกตอนเริ่มโปรแกรม/เป็นระยะ
-     * ส่ง serial_number เข้ามา -> คืน device_id, driver_id, trip_id (ล่าสุดที่ยังไม่จบ) ให้ครบ
-     * เพื่อไม่ต้อง hardcode ตัวเลขพวกนี้ไว้ในโค้ด (ใช้ได้กับทุกอุปกรณ์ในโค้ดชุดเดียวกัน)
-     */
-    // public function lookupBySerial(Request $request)
-    // {
-    //     $request->validate([
-    //         'serial_number' => 'required|string',
-    //     ]);
-
-    //     $device = Device::where('serial_number', $request->serial_number)->first();
-
-    //     if (!$device) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => 'ไม่พบอุปกรณ์นี้ในระบบ (ยังไม่ได้ลงทะเบียน)',
-    //         ], 404);
-    //     }
-
-    //     // $driverId = $device->driver_id;
-    //     $driverId = \App\Models\DriverDevice::where('device_id', $device->device_id)
-    //         ->where('is_active', 1)
-    //         ->value('driver_id');
-
-    //     $tripId = null;
-    //     if ($driverId) {
-    //         // trip ล่าสุดที่ยัง "ไม่จบ" ของ driver คนนี้
-    //         // ⚠️ ปรับเงื่อนไขนี้ให้ตรงกับ schema จริงของตาราง trips ถ้าจำเป็น:
-    //         //    - ถ้ามีคอลัมน์ ended_at (nullable) ใช้ whereNull('ended_at')
-    //         //    - ถ้าใช้ status string ให้เปลี่ยนเป็น where('status', 'กำลังเดินทาง') เป็นต้น
-    //         $tripQuery = \App\Models\Trip::where('driver_id', $driverId);
-
-    //         if (\Illuminate\Support\Facades\Schema::hasColumn('trips', 'ended_at')) {
-    //             $tripQuery->whereNull('ended_at');
-    //         } elseif (\Illuminate\Support\Facades\Schema::hasColumn('trips', 'status')) {
-    //             $tripQuery->whereNotIn('status', ['เสร็จสิ้น', 'จบทริป', 'completed']);
-    //         }
-
-    //         $trip = $tripQuery->orderByDesc('created_at')->first();
-    //         $tripId = $trip?->id;
-    //     }
-
-    //     return response()->json([
-    //         'success' => true,
-    //         'data' => [
-    //             'device_id'   => $device->device_id,
-    //             'driver_id'   => $driverId,
-    //             'trip_id'     => $tripId,
-    //             'ip_address'  => $device->ip_address,
-    //         ],
-    //     ]);
-    // }
     public function lookupBySerial(Request $request)
     {
         $request->validate([
@@ -296,15 +259,6 @@ class DeviceController extends Controller
             ],
         ]);
     }
-    /**
-     * ให้ script ฝั่ง PC (smart_drive_guard.py) เรียกตอนเริ่มโปรแกรม "ครั้งแรก" เท่านั้น
-     * เพื่อดึง serial_number ของกล้องที่ "เคยลงทะเบียนไว้แล้ว" ในฐานข้อมูล มาใช้เอง
-     * โดยไม่ต้องให้ผู้ใช้พิมพ์กรอกเอง (ตาม concept 1 เครื่อง PC ต่อกล้อง 1 ตัวเสมอ)
-     *
-     * หลักการเลือก: เอาอุปกรณ์ที่ "ยังมีการเชื่อมต่อล่าสุด" มากที่สุด
-     * (ดูจาก last_heartbeat_at หรือถ้าไม่มีก็ ip_updated_at) เพราะแปลว่าเป็นตัวที่เพิ่ง
-     * register เข้ามาจริง ๆ (ESP32 บอร์ดที่กำลังใช้งานอยู่ตอนนี้)
-     */
     public function autoDetectSerial()
     {
         $device = Device::whereNotNull('serial_number')

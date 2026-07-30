@@ -19,6 +19,10 @@ class DeviceMedia extends Model
         'file_path',
         'url',
         'file_size',
+        'is_active',
+    ];
+    protected $casts = [
+        'is_active' => 'boolean',   // ← เพิ่ม
     ];
 
     public function device()

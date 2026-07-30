@@ -54,16 +54,10 @@ class AppController extends Controller
             ->with('setting')
             ->get()
             ->map(function ($device) use ($timeoutSeconds) {
-                // ✅ คำนวณสถานะออนไลน์/ออฟไลน์แบบสดจาก last_heartbeat_at ตรงนี้เลย
-                // แทนที่จะเชื่อ column `status` ที่ถูกต้องพึ่ง Laravel Scheduler
-                // มาคอยอัปเดตให้เท่านั้น (ถ้า scheduler ไม่ได้รันอยู่จริง เช่นตอน
-                // dev ใช้ `php artisan serve` เฉยๆ โดยไม่มี `schedule:work`/cron คู่ไปด้วย
-                // column status จะค้างเป็น 'ออนไลน์' แม้ heartbeat หยุดส่งมาแล้วจริงๆ)
                 $isStale = !$device->last_heartbeat_at
                     || $device->last_heartbeat_at->lt(now()->subSeconds($timeoutSeconds));
 
                 $device->status = $isStale ? 'ออฟไลน์' : 'ออนไลน์';
-
                 return $device;
             });
 
