@@ -162,3 +162,6 @@ Route::get('/driver-latest-alert', function (Request $request) {
 // ip devices
 Route::post('/devices/{id}/register-ip', [DeviceController::class, 'registerIp']);
 Route::get('/devices/{id}/ip', [DeviceController::class, 'getIp']);
+Route::prefix('app')->group(function () {
+    Route::post('/drivers/{driver}/avatar', [AppController::class, 'uploadAvatar']);
+});

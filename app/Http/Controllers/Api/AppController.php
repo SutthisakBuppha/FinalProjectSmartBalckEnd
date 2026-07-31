@@ -42,6 +42,45 @@ class AppController extends Controller
         return response()->json(['success' => true, 'data' => $driverModel]);
     }
 
+    /**
+     * อัปโหลดรูปโปรไฟล์คนขับ:
+     * - ลบไฟล์รูปเดิมออกจากโฟลเดอร์ assets/images (ถ้ามี)
+     * - บันทึกไฟล์ใหม่ลงโฟลเดอร์เดียวกัน
+     * - อัปเดต avatar_url ในฐานข้อมูล
+     */
+    public function uploadAvatar(Request $request, string $driver)
+    {
+        // เปลี่ยน $driver เป็น string type
+        $driverModel = Driver::findOrFail($driver);
+
+        $request->validate([
+            'avatar' => 'required|image|max:5120', // สูงสุด 5MB
+        ]);
+
+        $destination = public_path('assets/images');
+        if (!is_dir($destination)) {
+            mkdir($destination, 0755, true);
+        }
+
+        // ลบไฟล์รูปเดิมออกจากโฟลเดอร์ ถ้ามีอยู่จริง
+        if ($driverModel->avatar_url) {
+            $oldFileName = basename(parse_url($driverModel->avatar_url, PHP_URL_PATH) ?: $driverModel->avatar_url);
+            $oldPath = $destination . DIRECTORY_SEPARATOR . $oldFileName;
+            if (is_file($oldPath)) {
+                @unlink($oldPath);
+            }
+        }
+
+        $file = $request->file('avatar');
+        $fileName = $driverModel->driver_id . '_' . time() . '.' . $file->getClientOriginalExtension();
+        $file->move($destination, $fileName);
+
+        $url = asset('assets/images/' . $fileName);
+        $driverModel->update(['avatar_url' => $url]);
+
+        return response()->json(['success' => true, 'data' => $driverModel->fresh()]);
+    }
+
     public function devices(string $driver)
     {
         // เปลี่ยน $driver เป็น string type
