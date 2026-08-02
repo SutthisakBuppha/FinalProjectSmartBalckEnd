@@ -86,7 +86,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
             Route::put('trips/{trip}',                             [AppController::class, 'updateTrip']);
             Route::patch('trips/{trip}',                           [AppController::class, 'updateTrip']);
             Route::delete('trips/{trip}',                          [AppController::class, 'destroyTrip']);
-            Route::get('trips/{trip}/locations',                   [AppController::class, 'tripLocations']);
+            Route::get('trips/{trip}/locations',                   [AppController::class, 'locations']);
             Route::post('trips/{trip}/locations',                  [AppController::class, 'storeTripLocation']);
             Route::get('trips/{trip}/locations/{location}',        [AppController::class, 'showTripLocation']);
             Route::put('trips/{trip}/locations/{location}',        [AppController::class, 'updateTripLocation']);
