@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Device;
 use App\Models\DeviceMedia;
+use App\Services\SupabaseStorage;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class DeviceController extends Controller
@@ -152,11 +152,9 @@ class DeviceController extends Controller
 
         $extension = $file->getClientOriginalExtension();
         $fileName = $type . '_' . now()->format('YmdHis') . '_' . Str::random(6) . '.' . $extension;
-        // เสียงจะถูกส่งไปเก็บที่ storage/app/public/devices
         $folder = "devices/{$deviceId}/{$type}s";
-        $path = $file->storeAs($folder, $fileName, 'public');
-
-        $url = asset('storage/' . $path);
+        $path = "{$folder}/{$fileName}";
+        $url = app(SupabaseStorage::class)->upload($file, $path);
 
         $media = DeviceMedia::create([
             'media_id'  => (string) Str::random(10),
@@ -209,7 +207,7 @@ class DeviceController extends Controller
     {
         // เปลี่ยน $mediaId เป็น string type
         $media = DeviceMedia::findOrFail($mediaId);
-        Storage::disk('public')->delete($media->file_path);
+        app(SupabaseStorage::class)->delete($media->file_path);
         $media->delete();
 
         return response()->json(['success' => true]);

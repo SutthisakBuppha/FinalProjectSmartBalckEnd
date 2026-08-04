@@ -95,10 +95,13 @@ DEVICE_IP_FETCH_MAX_RETRIES = 10        # ตอนเริ่มโปรแ�
 MODEL_PATH = "face_landmarker.task"  # ดาวน์โหลดจากลิงก์ในคำอธิบาย แล้ววางไว้โฟลเดอร์เดียวกัน
 
 # ---- threshold: การหลับตา (จาก blendshape eyeBlinkLeft/Right, ค่า 0-1) ----
-EYE_BLINK_SCORE_THRESHOLD = 0.5   # ค่ามากกว่านี้ถือว่าหลับตา (0.5 กำลังดี ปรับได้ 0.4-0.6)
+EYE_BLINK_SCORE_THRESHOLD = 0.5
+
+# --- threshold: การไม่กะพริบตานาน (จากเวลาที่ตาเปิดต่อเนื่อง) ----
+EYES_OPEN_TOO_LONG_SECONDS_THRESHOLD = 8.0
 
 # ---- threshold: การหันหน้า/ไม่มองถนน (จากมุม yaw ที่คำนวณจาก facial transformation matrix) ----
-HEAD_YAW_THRESHOLD_DEG = 25.0     # หันเกินกี่องศาถึงถือว่า "ไม่มองถนน" (ปรับได้ 20-30)
+HEAD_YAW_THRESHOLD_DEG = 25.0  
 
 INATTENTIVE_SECONDS_THRESHOLD = 2.5
 ALERT_AFTER_N_TIMES = 3
@@ -253,6 +256,7 @@ else:
 # ---- สถานะของระบบ ----
 inattentive_start = None
 inattentive_reason = None  # "หลับตา" หรือ "ไม่มองถนน"
+eyes_open_start = None
 buzzer_is_ringing = False
 closed_event_count = 0
 last_event_timestamp = 0
@@ -373,27 +377,56 @@ while True:
     face_detected, eyes_closed, head_turned, yaw_deg = analyze_frame(frame)
     current_time = time.time()
 
+    # A detected closed-eye frame is treated as an observed blink and resets
+    # the continuous-open-eye timer.
+    if face_detected and not eyes_closed:
+        if eyes_open_start is None:
+            eyes_open_start = current_time
+    else:
+        eyes_open_start = None
+
+    eyes_open_elapsed = (
+        current_time - eyes_open_start if eyes_open_start is not None else 0.0
+    )
+    eyes_open_too_long = (
+        face_detected
+        and not eyes_closed
+        and eyes_open_elapsed >= EYES_OPEN_TOO_LONG_SECONDS_THRESHOLD
+    )
+
     # รีเซ็ตตัวนับถ้าไม่มีเหตุการณ์เกิดขึ้นมานานแล้ว
     if closed_event_count > 0 and (current_time - last_event_timestamp) > EVENT_RESET_WINDOW_SECONDS:
         print(f"🔄 [RESET COUNTER] ไม่มีเหตุการณ์มา {EVENT_RESET_WINDOW_SECONDS} วิ -> รีเซ็ตตัวนับกลับเป็น 0")
         closed_event_count = 0
 
-    is_inattentive = face_detected and (eyes_closed or head_turned)
+    is_inattentive = face_detected and (
+        eyes_closed or head_turned or eyes_open_too_long
+    )
 
     if is_inattentive:
         # ----- กำลังหลับตา หรือ หันหน้าไม่มองถนน -----
-        reason = "หลับตา" if eyes_closed else "ไม่มองถนน (หันหน้า)"
-        alert_type = "ง่วงนอน" if eyes_closed else "ไม่มองถนน"
+        if eyes_closed:
+            reason = "หลับตา"
+            alert_type = "ง่วงนอน"
+        elif head_turned:
+            reason = "ไม่มองถนน (หันหน้า)"
+            alert_type = "ไม่มองถนน"
+        else:
+            reason = "ไม่กะพริบตานาน"
+            # "เหม่อลอย" is already accepted by the Laravel API validation.
+            alert_type = "เหม่อลอย"
 
         if inattentive_start is None:
-            inattentive_start = current_time
+            # Retain the start of the open-eye period, allowing this condition
+            # to alert immediately once its own threshold is reached.
+            inattentive_start = eyes_open_start if eyes_open_too_long else current_time
             inattentive_reason = reason
             print(f"📥 [TIMING] ตรวจพบ: {reason} เริ่มจับเวลา...")
         else:
             elapsed_time = current_time - inattentive_start
             print(f"📥 [TIMING] {reason} ต่อเนื่อง -> {elapsed_time:.1f} / {INATTENTIVE_SECONDS_THRESHOLD} วินาที (yaw={yaw_deg:.1f}°)")
 
-            if elapsed_time >= INATTENTIVE_SECONDS_THRESHOLD:
+            if elapsed_time >= INATTENTIVE_SECONDS_THRESHOLD and not buzzer_is_ringing:
                 turn_buzzer_on()
                 last_event_type = alert_type
 
@@ -433,7 +466,7 @@ while True:
     )
     cv2.putText(
         frame,
-        f"yaw: {yaw_deg:.1f} deg | IP: {DEVICE_IP}",
+        f"yaw: {yaw_deg:.1f} deg | open: {eyes_open_elapsed:.1f}/{EYES_OPEN_TOO_LONG_SECONDS_THRESHOLD:.1f}s",
         (10, 50),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.45,

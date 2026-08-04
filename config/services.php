@@ -34,4 +34,10 @@ return [
         'api_key' => env('IOT_API_KEY','smart-iot-2026-secretkey'),
     ],
 
+    'supabase' => [
+        'url' => env('SUPABASE_URL'),
+        'secret_key' => env('SUPABASE_SECRET_KEY'),
+        'bucket' => env('SUPABASE_STORAGE_BUCKET', 'driver-images'),
+    ],
+
 ];
