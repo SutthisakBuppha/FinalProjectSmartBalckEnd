@@ -11,6 +11,7 @@ use App\Models\DriverDevice;
 use App\Models\Notification;
 use App\Models\Trip;
 use App\Models\TripLocation;
+use App\Services\SupabaseStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -73,9 +74,8 @@ class AppController extends Controller
 
         $file = $request->file('avatar');
         $fileName = $driverModel->driver_id . '_' . time() . '.' . $file->getClientOriginalExtension();
-        $file->move($destination, $fileName);
-
-        $url = asset('assets/images/' . $fileName);
+        $path = "drivers/{$driverModel->driver_id}/avatars/{$fileName}";
+        $url = app(SupabaseStorage::class)->upload($file, $path);
         $driverModel->update(['avatar_url' => $url]);
 
         return response()->json(['success' => true, 'data' => $driverModel->fresh()]);
