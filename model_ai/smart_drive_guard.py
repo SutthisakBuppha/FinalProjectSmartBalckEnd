@@ -13,8 +13,11 @@ from mediapipe.tasks.python import vision as mp_vision
 # ==================== ตั้งค่าระบบ (CONFIG) ====================
 # 🔴 จุดเดียวที่ยัง fix ไว้ -- ใช้ mDNS name แทน IP เพื่อไม่ต้องแก้ตาม WiFi ที่เปลี่ยน
 # ถ้าเครื่องที่รัน Laravel ยังไม่ได้ตั้ง mDNS ไว้ ให้ใช้ IP จริงแทนชั่วคราว
-# LARAVEL_BASE_URL = "http://laravel-pc.local:8000"
-LARAVEL_BASE_URL = "http://DESKTOP-8H547TA.local:8000"
+# Default to the deployed API.  Set LARAVEL_BASE_URL only when an override is
+# needed, for example while developing against a local Laravel instance.
+LARAVEL_BASE_URL = os.getenv(
+    "LARAVEL_BASE_URL", "https://smartdriver.lnw.mn"
+).rstrip("/")
 
 LARAVEL_WEBHOOK_URL = f"{LARAVEL_BASE_URL}/api/alerts"
 DEVICE_LOOKUP_ENDPOINT = f"{LARAVEL_BASE_URL}/api/devices/lookup"
