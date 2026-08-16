@@ -19,3 +19,4 @@ yarn-error.log
 /.vscode
 venv/
 .venv/
+/storage/app/firebase/*.json

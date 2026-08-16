@@ -710,4 +710,27 @@ class AppController extends Controller
             ->where('noti_id', $notification)
             ->firstOrFail();
     }
+public function registerFcmToken(Request $request, string $driver)
+{
+    Driver::findOrFail($driver);
+    $request->validate(['token' => 'required|string', 'platform' => 'required|in:android,ios']);
+
+    \App\Models\DriverFcmToken::updateOrCreate(
+        ['token' => $request->token],
+        [
+            'fcm_token_id' => (string) \Illuminate\Support\Str::random(11),
+            'driver_id' => $driver,
+            'platform' => $request->platform,
+        ]
+    );
+
+    return response()->json(['success' => true]);
+}
+
+public function unregisterFcmToken(Request $request, string $driver)
+{
+    $request->validate(['token' => 'required|string']);
+    \App\Models\DriverFcmToken::where('driver_id', $driver)->where('token', $request->token)->delete();
+    return response()->json(['success' => true]);
+}
 }

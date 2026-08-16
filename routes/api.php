@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\TripLocationController;
 use App\Http\Controllers\Api\AppController;
 use App\Http\Controllers\Api\DriverAuthController;
 use App\Http\Controllers\Api\DriverDashboardController;
+use App\Http\Controllers\Api\NearbyPlacesController;
 use App\Models\Alert;
 use App\Models\Notification;
 use Illuminate\Http\Request;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Log;
 
 // ── Admin Auth (throttle กันโดน brute force) ────────────────
 Route::middleware('throttle:5,1')->group(function () {
+    Route::post('/register',        [AuthController::class, 'register']);
     Route::post('/login',           [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
@@ -40,11 +42,9 @@ Route::middleware('iot.apikey')->group(function () {
 
     // 🆕 ให้ smart_drive_guard.py (ฝั่ง PC) เรียกตอนเริ่มโปรแกรม เพื่อดึง serial_number
     // ของอุปกรณ์ที่ "เคยลงทะเบียนไว้แล้ว" ในฐานข้อมูลมาใช้เองโดยอัตโนมัติ
-    // แทนการให้ผู้ใช้พิมพ์กรอก serial_number เอง
     Route::get('/devices/auto-detect', [DeviceController::class, 'autoDetectSerial']);
 
-    // 🔄 ย้ายมาไว้ในกลุ่มนี้แทน (เดิมอยู่นอกกลุ่ม ไม่ต้องใช้ key เลย แต่ smart_drive_guard.py
-    // ส่ง X-API-KEY มาด้วยอยู่แล้วตอนเรียก lookup จึงย้ายเข้ามาให้ตรงกับ middleware จริง)
+    // 🔄 ย้ายมาไว้ในกลุ่มนี้แทน
     Route::get('/devices/lookup', [DeviceController::class, 'lookupBySerial']);
 });
 
@@ -64,9 +64,12 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::prefix('app/drivers/{driver}')
         ->middleware('driver.owner')
         ->group(function () {
-            Route::get('/',    [AppController::class, 'showDriver']);
-            Route::put('/',    [AppController::class, 'updateDriver']);
-            Route::patch('/',  [AppController::class, 'updateDriver']);
+            Route::get('/',            [AppController::class, 'showDriver']);
+            Route::put('/',            [AppController::class, 'updateDriver']);
+            Route::patch('/',          [AppController::class, 'updateDriver']);
+            Route::post('avatar',      [AppController::class, 'uploadAvatar']);
+            Route::post('fcm-token',   [AppController::class, 'registerFcmToken']);
+            Route::delete('fcm-token', [AppController::class, 'unregisterFcmToken']);
 
             // Devices
             Route::get('devices',                     [AppController::class, 'devices']);
@@ -93,8 +96,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
             Route::patch('trips/{trip}/locations/{location}',      [AppController::class, 'updateTripLocation']);
             Route::delete('trips/{trip}/locations/{location}',     [AppController::class, 'destroyTripLocation']);
 
-            // Alerts
-            Route::get('alerts',            [AppController::class, 'alerts']);
+            // Alerts (ดึงผ่าน AlertController เพื่อรองรับ ?today=true และเรียงตามเวลาล่าสุด)
+            Route::get('alerts',            [AlertController::class, 'index']);
             Route::post('alerts',           [AppController::class, 'storeAlert']);
             Route::get('alerts/{alert}',    [AppController::class, 'showAlert']);
             Route::put('alerts/{alert}',    [AppController::class, 'updateAlert']);
@@ -142,9 +145,9 @@ Route::middleware(['auth:sanctum', 'admin.token', 'throttle:60,1'])->group(funct
 Route::post('/devices/heartbeat', [DeviceController::class, 'heartbeat']);
 
 // ── Device media ──
-Route::post('/device-media/upload',      [DeviceController::class, 'uploadMedia']);
-Route::get('/device-media/{deviceId}',   [DeviceController::class, 'indexMedia']);
-Route::delete('/device-media/{mediaId}', [DeviceController::class, 'destroyMedia']);
+Route::post('/device-media/upload',            [DeviceController::class, 'uploadMedia']);
+Route::get('/device-media/{deviceId}',         [DeviceController::class, 'indexMedia']);
+Route::delete('/device-media/{mediaId}',       [DeviceController::class, 'destroyMedia']);
 Route::patch('/device-media/{mediaId}/select', [DeviceController::class, 'selectMedia']);
 
 // 🔄 [GET] ดึงประวัติ Alert ล่าสุด (สำหรับ Flutter ทำ Polling เช็กให้เด้งจอ Alert อัตโนมัติ)
@@ -159,9 +162,7 @@ Route::get('/driver-latest-alert', function (Request $request) {
     return response()->json(['success' => true, 'data' => $latestAlert], 200);
 });
 
-// ip devices
+// IP devices & Places
 Route::post('/devices/{id}/register-ip', [DeviceController::class, 'registerIp']);
-Route::get('/devices/{id}/ip', [DeviceController::class, 'getIp']);
-Route::prefix('app')->group(function () {
-    Route::post('/drivers/{driver}/avatar', [AppController::class, 'uploadAvatar']);
-});
+Route::get('/devices/{id}/ip',           [DeviceController::class, 'getIp']);
+Route::get('/nearby-places',             [NearbyPlacesController::class, 'index']);

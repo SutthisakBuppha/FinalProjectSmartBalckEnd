@@ -34,25 +34,42 @@ IOT_API_HEADERS = {"X-API-KEY": IOT_API_KEY}
 #   2) ถาม Laravel ผ่าน endpoint /api/devices/auto-detect ให้ไปดึง serial_number ล่าสุด
 #      ที่เคยลงทะเบียน/เชื่อมต่อในฐานข้อมูลมาใช้เอง (ตาม concept 1 เครื่อง PC ต่อกล้อง 1 ตัวเสมอ)
 
-def fetch_serial_number_from_database() -> str | None:
+def fetch_serial_number_from_database(
+    max_retries: int = 10,
+    retry_delay_seconds: float = 3.0,
+) -> str | None:
     """ถาม Laravel ให้ไปดึง serial_number ของอุปกรณ์ที่เคยลงทะเบียนไว้แล้วในฐานข้อมูลมาใช้เอง"""
-    try:
-        res = requests.get(
-            DEVICE_AUTO_DETECT_ENDPOINT,
-            headers=IOT_API_HEADERS,
-            timeout=10,
-        )
-        res.raise_for_status()
-        payload = res.json()
-        data = payload.get("data") or {}
-        serial = data.get("serial_number")
-        if serial:
-            return str(serial).strip()
-        print(f"⚠️ Laravel ตอบกลับมาแต่ไม่พบ serial_number: {payload.get('message')}")
-        return None
-    except Exception as e:
-        print(f"❌ ดึง serial_number จากฐานข้อมูลไม่สำเร็จ: {e}")
-        return None
+    for attempt in range(1, max_retries + 1):
+        try:
+            res = requests.get(
+                DEVICE_AUTO_DETECT_ENDPOINT,
+                headers={**IOT_API_HEADERS, "Accept": "application/json"},
+                timeout=15,
+            )
+            res.raise_for_status()
+            payload = res.json()
+            data = payload.get("data") or {}
+            serial = data.get("serial_number")
+            if serial:
+                return str(serial).strip()
+
+            print(
+                "⚠️ Laravel ตอบกลับมาแต่ไม่พบ serial_number: "
+                f"{payload.get('message')}"
+            )
+            return None
+        except requests.RequestException as e:
+            print(
+                f"⚠️ เชื่อมต่อ Laravel ไม่สำเร็จ "
+                f"({attempt}/{max_retries}): {e}"
+            )
+            if attempt < max_retries:
+                time.sleep(retry_delay_seconds)
+        except (ValueError, TypeError) as e:
+            print(f"❌ รูปแบบข้อมูล serial_number จาก Laravel ไม่ถูกต้อง: {e}")
+            return None
+
+    return None
 
 
 def load_device_serial_number() -> str:
@@ -104,11 +121,10 @@ EYE_BLINK_SCORE_THRESHOLD = 0.5
 EYES_OPEN_TOO_LONG_SECONDS_THRESHOLD = 8.0
 
 # ---- threshold: การหันหน้า/ไม่มองถนน (จากมุม yaw ที่คำนวณจาก facial transformation matrix) ----
-HEAD_YAW_THRESHOLD_DEG = 25.0  
+HEAD_YAW_THRESHOLD_DEG = 25.0
 
 INATTENTIVE_SECONDS_THRESHOLD = 2.5
 ALERT_AFTER_N_TIMES = 3
-EVENT_RESET_WINDOW_SECONDS = 60
 
 BUZZER_CMD_TIMEOUT_SECONDS = 2.5
 
@@ -291,7 +307,7 @@ def turn_buzzer_off():
         buzzer_is_ringing = False
 
 
-def send_alert_to_laravel(alert_type: str):
+def send_alert_to_laravel(alert_type: str, trigger_notification: bool = False):
     payload = {
         "trip_id": TRIP_ID,
         "driver_id": DRIVER_ID,
@@ -299,7 +315,10 @@ def send_alert_to_laravel(alert_type: str):
         "type": alert_type,
         "snapshot_url": f"{LARAVEL_BASE_URL}/storage/snapshots/default.jpg",
         "latitude": 13.7563,
-        "longitude": 100.5018
+        "longitude": 100.5018,
+        # บันทึก Alert ทุกรอบ แต่ให้ Laravel สร้าง Notification/Push
+        # และเปิด AlertScreen เฉพาะรอบที่นับครบ 3 เท่านั้น
+        "trigger_notification": trigger_notification,
     }
     headers = {
         "Content-Type": "application/json",
@@ -397,11 +416,6 @@ while True:
         and eyes_open_elapsed >= EYES_OPEN_TOO_LONG_SECONDS_THRESHOLD
     )
 
-    # รีเซ็ตตัวนับถ้าไม่มีเหตุการณ์เกิดขึ้นมานานแล้ว
-    if closed_event_count > 0 and (current_time - last_event_timestamp) > EVENT_RESET_WINDOW_SECONDS:
-        print(f"🔄 [RESET COUNTER] ไม่มีเหตุการณ์มา {EVENT_RESET_WINDOW_SECONDS} วิ -> รีเซ็ตตัวนับกลับเป็น 0")
-        closed_event_count = 0
-
     is_inattentive = face_detected and (
         eyes_closed or head_turned or eyes_open_too_long
     )
@@ -416,8 +430,7 @@ while True:
             alert_type = "ไม่มองถนน"
         else:
             reason = "ไม่กะพริบตานาน"
-            # "เหม่อลอย" is already accepted by the Laravel API validation.
-            alert_type = "เหม่อลอย"
+            alert_type = "ไม่กระพริบตาเป็นเวลานาน"
 
         if inattentive_start is None:
             # Retain the start of the open-eye period, allowing this condition
@@ -443,11 +456,18 @@ while True:
                 turn_buzzer_off()
                 closed_event_count += 1
                 last_event_timestamp = current_time
-                print(f"✅ [EVENT DONE] เหตุการณ์ที่ {closed_event_count}/{ALERT_AFTER_N_TIMES} (ประเภท: {last_event_type})")
+                reached_alert_threshold = closed_event_count >= ALERT_AFTER_N_TIMES
+                print(f"✅ [EVENT DONE] Buzzer เตือนครั้งที่ {closed_event_count}/{ALERT_AFTER_N_TIMES} (ประเภท: {last_event_type})")
 
-                if closed_event_count >= ALERT_AFTER_N_TIMES:
-                    print(f"\n⚠️ [AI DETECTED] เหตุการณ์ซ้ำครบ {ALERT_AFTER_N_TIMES} ครั้ง! กำลังส่งสัญญาณแจ้งเตือนเข้าแอป...")
-                    send_alert_to_laravel(last_event_type)
+                # Buzzer ดังและจบลง 1 รอบ = Alert 1 แถวในฐานข้อมูล
+                # ทำให้สถิติหน้า History เพิ่ม +1 ตรงกับจำนวนรอบที่เตือนจริง
+                send_alert_to_laravel(
+                    last_event_type,
+                    trigger_notification=reached_alert_threshold,
+                )
+
+                if reached_alert_threshold:
+                    print("⚠️ [ALERT] ครบ 3 ครั้งแล้ว แจ้งเตือนเข้าแอปและรีเซ็ตตัวนับเป็น 0")
                     closed_event_count = 0
 
             inattentive_start = None
@@ -489,10 +509,14 @@ while True:
         turn_buzzer_off()
         closed_event_count += 1
         last_event_timestamp = time.time()
-        print(f"🧪 [TEST] นับสะสม: {closed_event_count}/{ALERT_AFTER_N_TIMES}")
-        if closed_event_count >= ALERT_AFTER_N_TIMES:
-            print(f"\n⚠️ [TEST] ครบ {ALERT_AFTER_N_TIMES} ครั้ง! กำลังส่งสัญญาณแจ้งเตือนเข้าแอป...")
-            send_alert_to_laravel("ง่วงนอน")
+        reached_alert_threshold = closed_event_count >= ALERT_AFTER_N_TIMES
+        print(f"🧪 [TEST] Buzzer เตือนครั้งที่ {closed_event_count}/{ALERT_AFTER_N_TIMES}")
+        send_alert_to_laravel(
+            "ง่วงนอน",
+            trigger_notification=reached_alert_threshold,
+        )
+        if reached_alert_threshold:
+            print("⚠️ [TEST] ครบ 3 ครั้งแล้ว แจ้งเตือนเข้าแอปและรีเซ็ตตัวนับเป็น 0")
             closed_event_count = 0
     elif key == ord('r'):
         closed_event_count = 0

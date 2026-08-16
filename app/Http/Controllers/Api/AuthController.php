@@ -13,6 +13,32 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'username' => 'required|string|max:50|unique:admins,username',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        do {
+            $adminId = Str::upper(Str::random(10));
+        } while (Admin::whereKey($adminId)->exists());
+
+        $admin = Admin::create([
+            'admin_id' => $adminId,
+            'username' => $validated['username'],
+            'password' => Hash::make($validated['password']),
+            'full_name' => $validated['username'],
+            'role_label' => 'admin',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'สร้างบัญชีผู้ดูแลสำเร็จ',
+            'admin' => $admin,
+        ], 201);
+    }
+
     public function login(Request $request)
     {
         $request->validate([
